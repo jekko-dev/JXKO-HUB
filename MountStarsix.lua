@@ -7,6 +7,8 @@ if old then old:Destroy() end
 local file="JXKO_MountStarsix_CP.json"
 local cp,summit,selected={},nil,1
 local walk,jump,play,alive=false,false,false,true
+local jumpHeight=12
+local defaultJumpHeight=nil
 local function char()
  local c=P.Character
  if c then return c:FindFirstChildOfClass("Humanoid"),c:FindFirstChild("HumanoidRootPart") end
@@ -96,7 +98,34 @@ button("SIMPAN SUMMIT SAAT INI",function()
 end)
 button("TELEPORT SUMMIT",function() msg(tp(summit) and "Teleport summit" or "Summit belum ditemukan") end)
 button("AUTO WALK: OFF",function(b) walk=not walk;b.Text="AUTO WALK: "..(walk and "ON" or "OFF") end)
-button("AUTO JUMP: OFF",function(b) jump=not jump;b.Text="AUTO JUMP: "..(jump and "ON" or "OFF") end)
+local function applyJumpHeight()
+ local hum=char()
+ if hum then
+  if defaultJumpHeight==nil then defaultJumpHeight=hum.JumpHeight end
+  hum.UseJumpPower=false
+  hum.JumpHeight=jumpHeight
+ end
+end
+button("AUTO JUMP: OFF",function(b)
+ jump=not jump
+ b.Text="AUTO JUMP: "..(jump and "ON" or "OFF")
+ if jump then applyJumpHeight() end
+end)
+button("JUMP HEIGHT -",function()
+ jumpHeight=math.max(2,jumpHeight-2)
+ applyJumpHeight()
+ msg("Jump Height: "..jumpHeight)
+end)
+button("JUMP HEIGHT +",function()
+ jumpHeight=math.min(100,jumpHeight+2)
+ applyJumpHeight()
+ msg("Jump Height: "..jumpHeight)
+end)
+button("RESET JUMP HEIGHT",function()
+ jumpHeight=12
+ applyJumpHeight()
+ msg("Jump Height: "..jumpHeight)
+end)
 local function walkTo(p)
  local start=os.clock()
  while alive and play and os.clock()-start<50 do
@@ -104,7 +133,7 @@ local function walkTo(p)
   if not hum or not root or hum.Health<=0 then return false end
   if (root.Position-p).Magnitude<6 then return true end
   hum:MoveTo(p)
-  if jump and hum.FloorMaterial~=Enum.Material.Air then hum.Jump=true end
+  if jump and hum.FloorMaterial~=Enum.Material.Air then applyJumpHeight();hum.Jump=true end
   task.wait(.3)
  end
  return false
