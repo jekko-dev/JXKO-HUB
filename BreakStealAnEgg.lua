@@ -9,6 +9,11 @@ if old then old:Destroy() end
 local alive=true
 local esp=false
 local farm=false
+local farmMode="Teleport V3"
+local farmDelay=1.2
+local farmIndex=0
+local farmVisited={}
+local farmLast=0
 local collect=false
 local autoSell=false
 local sellInterval=8
@@ -143,8 +148,24 @@ button("TELEPORT NEAREST EGG",function()
   msg("Teleported near "..item.object.Name)
  else msg("No egg object detected") end
 end)
+button("FARM MODE : TELEPORT V3",function(b)
+ local modes={"Teleport V3","Teleport V2","Teleport","Normal"}
+ local i=table.find(modes,farmMode) or 1
+ farmMode=modes[i%#modes+1]
+ b.Text="FARM MODE : "..string.upper(farmMode)
+ msg("Mode: "..farmMode)
+end)
+button("FARM DELAY -",function()
+ farmDelay=math.max(.3,math.floor((farmDelay-.2)*10+.5)/10)
+ msg("Farm delay: "..farmDelay.."s")
+end)
+button("FARM DELAY +",function()
+ farmDelay=math.min(5,math.floor((farmDelay+.2)*10+.5)/10)
+ msg("Farm delay: "..farmDelay.."s")
+end)
 button("AUTO FARM : OFF",function(b)
  farm=not farm
+ farmVisited={};farmIndex=0;farmLast=0
  b.Text="AUTO FARM : "..(farm and "ON" or "OFF")
  msg(farm and "Auto farm enabled" or "Auto farm disabled")
 end)
@@ -250,34 +271,66 @@ local function interact(item)
   end
  end
 end
+local function farmTarget()
+ scan()
+ if #eggs==0 then return nil end
+ -- Rotate among candidates instead of teleporting to the same egg forever.
+ local now=os.clock()
+ local available={}
+ for _,item in ipairs(eggs) do
+  if item.part.Parent and (not farmVisited[item.part] or now-farmVisited[item.part]>12) then
+   table.insert(available,item)
+  end
+ end
+ if #available==0 then farmVisited={};available=eggs end
+ local _,root=char()
+ if not root then return nil end
+ table.sort(available,function(a,b)
+  return (a.part.Position-root.Position).Magnitude<(b.part.Position-root.Position).Magnitude
+ end)
+ return available[1]
+end
+local function teleportFarm(item)
+ local hum,root=char()
+ if not hum or not root or hum.Health<=0 or not item or not item.part.Parent then return end
+ local target=item.part.Position
+ if farmMode=="Normal" then
+  hum:MoveTo(target)
+ else
+  local offset=(farmMode=="Teleport V3" and Vector3.new(0,3,3))
+    or (farmMode=="Teleport V2" and Vector3.new(0,5,0))
+    or Vector3.new(0,3,0)
+  root.CFrame=CFrame.new(target+offset,target)
+  root.AssemblyLinearVelocity=Vector3.zero
+  if collect then
+   task.wait(.15)
+   if alive then interact(item) end
+  end
+ end
+ farmVisited[item.part]=os.clock()
+ msg("Farm "..farmMode.." | "..item.object.Name)
+end
 local worker=task.spawn(function()
  while alive do
-  if autoSell and os.clock()-lastSell>=sellInterval then
+  local now=os.clock()
+  if farm and now-farmLast>=farmDelay then
+   farmLast=now
+   local item=farmTarget()
+   if item then teleportFarm(item)
+   else msg("No egg target found; use SCAN EGGS") end
+  elseif autoSell and not farm and now-lastSell>=sellInterval then
    local part,dist=findSellStation()
    local hum,root=char()
    if part and hum and root and hum.Health>0 then
-    if dist>7 then
-     hum:MoveTo(part.Position)
-    else
-     sellInteract(part)
-     lastSell=os.clock()
-    end
-   else
-    lastSell=os.clock()
-   end
-  elseif farm or collect then
+    if dist>7 then hum:MoveTo(part.Position)
+    else sellInteract(part);lastSell=os.clock() end
+   else lastSell=os.clock() end
+  elseif collect and not farm then
    scan()
-   local item,dist=nearest()
-   local hum,root=char()
-   if item and hum and root and hum.Health>0 then
-    if farm and dist>7 then
-     hum:MoveTo(item.part.Position)
-    elseif collect then
-     interact(item)
-    end
-   end
+   local item=nearest()
+   if item then interact(item) end
   end
-  task.wait(.7)
+  task.wait(.2)
  end
 end)
 local respawn=P.CharacterAdded:Connect(function()
