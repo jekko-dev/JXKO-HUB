@@ -10,6 +10,9 @@ local alive=true
 local esp=false
 local farm=false
 local collect=false
+local autoSell=false
+local sellInterval=8
+local lastSell=0
 local speedOn=false
 local jumpOn=false
 local speed=24
@@ -150,6 +153,54 @@ button("AUTO COLLECT : OFF",function(b)
  b.Text="AUTO COLLECT : "..(collect and "ON" or "OFF")
  msg("Auto collect: "..(collect and "ON" or "OFF"))
 end)
+local function findSellStation()
+ local best,bestDist=nil,math.huge
+ local _,root=char()
+ if not root then return nil end
+ for _,o in ipairs(workspace:GetDescendants()) do
+  local n=o.Name:lower()
+  if n=="sell" or n=="sellzone" or n=="sellpart" or n=="sellstation"
+     or n=="sell eggs" or n=="sell egg" or n=="sellarea" then
+   local part=eggPart(o)
+   if part and part:IsDescendantOf(workspace) then
+    local d=(root.Position-part.Position).Magnitude
+    if d<bestDist then best,bestDist=part,d end
+   end
+  end
+ end
+ return best,bestDist
+end
+local function sellInteract(part)
+ local _,root=char()
+ if not root or not part then return false end
+ local prompt=part:FindFirstChildWhichIsA("ProximityPrompt",true)
+ if not prompt and part.Parent then
+  prompt=part.Parent:FindFirstChildWhichIsA("ProximityPrompt",true)
+ end
+ if prompt and prompt.Enabled and type(fireproximityprompt)=="function" then
+  local holder=prompt.Parent
+  local pos=holder:IsA("BasePart") and holder.Position or part.Position
+  if (root.Position-pos).Magnitude<=prompt.MaxActivationDistance+2 then
+   return pcall(fireproximityprompt,prompt)
+  end
+ end
+ return false
+end
+button("AUTO SELL : OFF",function(b)
+ autoSell=not autoSell
+ b.Text="AUTO SELL : "..(autoSell and "ON" or "OFF")
+ lastSell=0
+ msg(autoSell and "Auto Sell ON | searching Sell station" or "Auto Sell OFF")
+end)
+button("SELL NOW",function()
+ local part,dist=findSellStation()
+ local hum,root=char()
+ if not part or not hum or not root then msg("Sell station not detected");return end
+ if dist>7 then hum:MoveTo(part.Position);msg("Walking to Sell station")
+ else
+  msg(sellInteract(part) and "Sell interaction attempted" or "At Sell station; interaction not verified")
+ end
+end)
 button("WALK SPEED -",function()
  speed=math.max(8,speed-4);msg("Speed: "..speed)
 end)
@@ -201,7 +252,20 @@ local function interact(item)
 end
 local worker=task.spawn(function()
  while alive do
-  if farm or collect then
+  if autoSell and os.clock()-lastSell>=sellInterval then
+   local part,dist=findSellStation()
+   local hum,root=char()
+   if part and hum and root and hum.Health>0 then
+    if dist>7 then
+     hum:MoveTo(part.Position)
+    else
+     sellInteract(part)
+     lastSell=os.clock()
+    end
+   else
+    lastSell=os.clock()
+   end
+  elseif farm or collect then
    scan()
    local item,dist=nearest()
    local hum,root=char()
@@ -221,7 +285,7 @@ local respawn=P.CharacterAdded:Connect(function()
 end)
 table.insert(connections,respawn)
 close.MouseButton1Click:Connect(function()
- alive=false;farm=false;collect=false;esp=false
+ alive=false;farm=false;collect=false;autoSell=false;esp=false
  clearMarks()
  for _,c in ipairs(connections) do c:Disconnect() end
  local hum=char()
